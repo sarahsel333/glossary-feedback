@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>글로서리 추출기 피드백 트래커</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #ffffff;
+    --bg2: #f7f7f5;
+    --bg3: #f1f0ec;
+    --border: rgba(0,0,0,0.1);
+    --border2: rgba(0,0,0,0.18);
+    --text: #1a1a18;
+    --text2: #5f5e5a;
+    --text3: #9b9a96;
+    --purple: #533AB7;
+    --purple-light: #EEEDFE;
+    --purple-dark: #3C3489;
+    --purple-text: #26215C;
+    --green-bg: #EAF3DE; --green-text: #27500A;
+    --amber-bg: #FAEEDA; --amber-text: #633806;
+    --red-bg: #FCEBEB; --red-text: #791F1F;
+    --gray-bg: #F1EFE8; --gray-text: #444441;
+    --radius: 8px; --radius-lg: 12px;
+  }
+  body {
+    font-family: 'Noto Sans KR', sans-serif;
+    background: var(--bg2);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+  header {
+    background: var(--bg);
+    border-bottom: 0.5px solid var(--border);
+    padding: 0 2rem;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 56px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .logo {
+    width: 32px; height: 32px;
+    background: var(--purple);
+    border-radius: var(--radius);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 16px;
+  }
+  header h1 { font-size: 15px; font-weight: 600; }
+  header .version { font-size: 12px; color: var(--text3); margin-left: auto; }
+
+  main { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 12px;
+    margin-bottom: 1.5rem;
+  }
+  .stat {
+    background: var(--bg);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1rem 1.25rem;
+  }
+  .stat-label { font-size: 12px; color: var(--text2); margin-bottom: 6px; }
+  .stat-val { font-size: 26px; font-weight: 600; color: var(--text); }
+  .stat-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
+
+  .toolbar {
+    display: flex; gap: 8px; flex-wrap: wrap;
+    margin-bottom: 1rem;
+    align-items: center;
+  }
+  .toolbar input, .toolbar select {
+    height: 36px; padding: 0 12px;
+    border: 0.5px solid var(--border2);
+    border-radius: var(--radius);
+    background: var(--bg);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    outline: none;
+  }
+  .toolbar input:focus, .toolbar select:focus {
+    border-color: var(--purple);
+    box-shadow: 0 0 0 3px rgba(83,58,183,0.1);
+  }
+  .toolbar input { width: 180px; }
+  .spacer { flex: 1; }
+  .btn {
+    height: 36px; padding: 0 16px;
+    border: 0.5px solid var(--border2);
+    border-radius: var(--radius);
+    background: var(--bg);
+    color: var(--text);
+    font-family: inherit; font-size: 13px; font-weight: 500;
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: background 0.12s, border-color 0.12s;
+    white-space: nowrap;
+  }
+  .btn:hover { background: var(--bg3); }
+  .btn.primary {
+    background: var(--purple); color: #fff;
+    border-color: var(--purple);
+  }
+  .btn.primary:hover { background: var(--purple-dark); border-color: var(--purple-dark); }
+  .btn.ghost { border-color: transparent; }
+  .btn.ghost:hover { background: var(--bg3); border-color: var(--border); }
+
+  .card {
+    background: var(--bg);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  .tbl-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead tr { background: var(--bg2); }
+  th {
+    padding: 10px 14px;
+    text-align: left; font-weight: 500;
+    color: var(--text2); font-size: 12px;
+    border-bottom: 0.5px solid var(--border);
+    white-space: nowrap;
+  }
+  td {
+    padding: 11px 14px;
+    border-bottom: 0.5px solid var(--border);
+    vertical-align: top;
+  }
+  tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: var(--bg2); }
+
+  .badge {
+    display: inline-block; padding: 3px 9px;
+    border-radius: 20px; font-size: 11px; font-weight: 500;
+    white-space: nowrap;
+  }
+  .badge.good { background: var(--green-bg); color: var(--green-text); }
+  .badge.warn { background: var(--amber-bg); color: var(--amber-text); }
+  .badge.bad  { background: var(--red-bg);   color: var(--red-text);   }
+  .badge.na   { background: var(--gray-bg);  color: var(--gray-text);  }
+  .badge.purple { background: var(--purple-light); color: var(--purple-text); }
+
+  .filename { font-weight: 500; font-size: 13px; }
+  .file-date { font-size: 11px; color: var(--text3); margin-top: 2px; }
+  .missing-tag { font-size: 11px; color: #791F1F; background: var(--red-bg); padding: 2px 7px; border-radius: 4px; display: inline-block; margin-bottom: 3px; }
+  .memo-text { font-size: 12px; color: var(--text2); }
+
+  .icon-btn {
+    background: none; border: none;
+    cursor: pointer; color: var(--text3);
+    padding: 4px; border-radius: 4px;
+    font-size: 16px; line-height: 1;
+    transition: background 0.1s, color 0.1s;
+  }
+  .icon-btn:hover { background: var(--bg3); color: var(--text); }
+  .icon-btn.del:hover { color: #791F1F; }
+
+  .empty {
+    padding: 4rem 2rem; text-align: center;
+    color: var(--text3);
+  }
+  .empty i { font-size: 40px; display: block; margin-bottom: 12px; }
+  .empty p { font-size: 14px; }
+
+  /* Modal */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 200;
+    align-items: center; justify-content: center;
+    padding: 1rem;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--bg);
+    border-radius: var(--radius-lg);
+    border: 0.5px solid var(--border2);
+    width: 560px; max-width: 100%;
+    max-height: 90vh; overflow-y: auto;
+    padding: 1.5rem;
+  }
+  .modal-header {
+    display: flex; align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.25rem;
+  }
+  .modal-header h2 { font-size: 16px; font-weight: 600; }
+  .form-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 12px; margin-bottom: 12px;
+  }
+  .form-grid.full { grid-template-columns: 1fr; }
+  .field label {
+    font-size: 12px; color: var(--text2);
+    display: block; margin-bottom: 5px; font-weight: 500;
+  }
+  .field input, .field select, .field textarea {
+    width: 100%; font-family: inherit; font-size: 13px;
+    padding: 8px 11px;
+    border: 0.5px solid var(--border2);
+    border-radius: var(--radius);
+    background: var(--bg); color: var(--text);
+    outline: none;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus {
+    border-color: var(--purple);
+    box-shadow: 0 0 0 3px rgba(83,58,183,0.1);
+  }
+  .field textarea { resize: vertical; min-height: 72px; }
+  .modal-footer {
+    display: flex; justify-content: flex-end;
+    gap: 8px; margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 0.5px solid var(--border);
+  }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 1.5rem; right: 1.5rem;
+    background: var(--text); color: #fff;
+    padding: 10px 16px; border-radius: var(--radius);
+    font-size: 13px; font-weight: 500;
+    opacity: 0; transform: translateY(8px);
+    transition: opacity 0.2s, transform 0.2s;
+    z-index: 300; pointer-events: none;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+
+  @media (max-width: 600px) {
+    main { padding: 1rem; }
+    .form-grid { grid-template-columns: 1fr; }
+    .toolbar input { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><i class="ti ti-file-text"></i></div>
+  <h1>글로서리 추출기 피드백 트래커</h1>
+  <span class="version">데이터는 이 브라우저에 저장됩니다</span>
+</header>
+
+<main>
+  <div class="stats" id="stats">
+    <div class="stat">
+      <div class="stat-label">총 세션</div>
+      <div class="stat-val" id="s-total">0</div>
+      <div class="stat-sub">기록된 테스트</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">파일 종류</div>
+      <div class="stat-val" id="s-files">0</div>
+      <div class="stat-sub">고유 파일 수</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">평균 용어 수</div>
+      <div class="stat-val" id="s-avg">—</div>
+      <div class="stat-sub">추출 용어 평균</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">원하는 용어 추출률</div>
+      <div class="stat-val" id="s-hit">—</div>
+      <div class="stat-sub">'예' 응답 비율</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">테스터 수</div>
+      <div class="stat-val" id="s-testers">0</div>
+      <div class="stat-sub">참여 팀원</div>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <input type="text" id="filter-file" placeholder="파일명 검색…" oninput="render()">
+    <select id="filter-tester" onchange="render()"><option value="">전체 테스터</option></select>
+    <select id="filter-wanted" onchange="render()">
+      <option value="">원하는 용어 — 전체</option>
+      <option value="yes">예 (잘 추출됨)</option>
+      <option value="partial">일부 (일부 누락)</option>
+      <option value="no">아니오 (미추출)</option>
+    </select>
+    <select id="filter-provider" onchange="render()">
+      <option value="">AI 제공자 — 전체</option>
+      <option value="Anthropic">Anthropic</option>
+      <option value="OpenAI">OpenAI</option>
+    </select>
+    <div class="spacer"></div>
+    <button class="btn ghost" onclick="exportCSV()"><i class="ti ti-download"></i> CSV 내보내기</button>
+    <button class="btn primary" onclick="openModal()"><i class="ti ti-plus"></i> 결과 추가</button>
+  </div>
+
+  <div class="card">
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:150px">파일명</th>
+            <th style="width:80px">테스터</th>
+            <th style="width:55px">회차</th>
+            <th style="width:60px">용어 수</th>
+            <th style="width:90px">일관성</th>
+            <th style="width:90px">원하는 용어</th>
+            <th style="width:85px">AI 제공자</th>
+            <th>누락 용어 / 메모</th>
+            <th style="width:64px"></th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div class="empty" id="empty">
+        <i class="ti ti-clipboard-list"></i>
+        <p>아직 기록된 결과가 없습니다.<br>팀원들의 테스트 결과를 추가해 보세요.</p>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal-overlay" onclick="overlayClick(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modal-title">새 결과 추가</h2>
+      <button class="icon-btn" onclick="closeModal()"><i class="ti ti-x"></i></button>
+    </div>
+
+    <div class="form-grid">
+      <div class="field">
+        <label>파일명 *</label>
+        <input type="text" id="f-file" placeholder="예: Windless_KR.pptx">
+      </div>
+      <div class="field">
+        <label>테스터 이름 *</label>
+        <input type="text" id="f-tester" placeholder="예: 김민준">
+      </div>
+    </div>
+    <div class="form-grid">
+      <div class="field">
+        <label>실행 회차 (같은 파일 몇 번째?)</label>
+        <input type="number" id="f-run" min="1" value="1">
+      </div>
+      <div class="field">
+        <label>추출된 용어 수</label>
+        <input type="number" id="f-cnt" min="0" placeholder="예: 36">
+      </div>
+    </div>
+    <div class="form-grid">
+      <div class="field">
+        <label>회차 간 용어 수 일관성</label>
+        <select id="f-consist">
+          <option value="na">첫 실행 (비교 불가)</option>
+          <option value="same">동일</option>
+          <option value="minor">소폭 차이 (±2 이하)</option>
+          <option value="diff">큰 차이 (±3 이상)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>원하는 용어 추출 여부</label>
+        <select id="f-wanted">
+          <option value="yes">예 — 잘 추출됨</option>
+          <option value="partial">일부 — 일부 누락</option>
+          <option value="no">아니오 — 원하는 용어 없음</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-grid">
+      <div class="field">
+        <label>AI 제공자</label>
+        <select id="f-provider">
+          <option value="Anthropic">Anthropic</option>
+          <option value="OpenAI">OpenAI</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>날짜</label>
+        <input type="date" id="f-date">
+      </div>
+    </div>
+    <div class="form-grid full">
+      <div class="field">
+        <label>누락된 용어 / 잘못 추출된 용어</label>
+        <input type="text" id="f-missing" placeholder="예: Hero King 누락, Dynamic LOD System 오분류">
+      </div>
+    </div>
+    <div class="form-grid full">
+      <div class="field">
+        <label>기타 메모 및 개선 의견</label>
+        <textarea id="f-memo" placeholder="예: IP/콘텐츠 카테고리는 잘 추출되나, 게임 말반 카테고리 용어 누락이 많음. 프롬프트에서 카테고리 예시 추가 필요."></textarea>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal()">취소</button>
+      <button class="btn primary" onclick="saveEntry()">저장</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const STORAGE_KEY = 'glossary-feedback-v1';
+let entries = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+let editId = null;
+
+const consistLabel = { na:'첫 실행', same:'동일', minor:'소폭 차이', diff:'큰 차이' };
+const consistBadge = { na:'na', same:'good', minor:'warn', diff:'bad' };
+const wantedLabel  = { yes:'예', partial:'일부', no:'아니오' };
+const wantedBadge  = { yes:'good', partial:'warn', no:'bad' };
+
+document.getElementById('f-date').value = new Date().toISOString().slice(0,10);
+
+function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(entries)); }
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+function openModal(id) {
+  editId = id ?? null;
+  document.getElementById('modal-title').textContent = id ? '결과 수정' : '새 결과 추가';
+  if (id) {
+    const e = entries.find(x => x.id === id);
+    document.getElementById('f-file').value = e.file;
+    document.getElementById('f-tester').value = e.tester;
+    document.getElementById('f-run').value = e.run;
+    document.getElementById('f-cnt').value = e.cnt ?? '';
+    document.getElementById('f-consist').value = e.consist;
+    document.getElementById('f-wanted').value = e.wanted;
+    document.getElementById('f-provider').value = e.provider;
+    document.getElementById('f-date').value = e.date;
+    document.getElementById('f-missing').value = e.missing;
+    document.getElementById('f-memo').value = e.memo;
+  } else {
+    document.getElementById('f-file').value = '';
+    document.getElementById('f-tester').value = '';
+    document.getElementById('f-run').value = '1';
+    document.getElementById('f-cnt').value = '';
+    document.getElementById('f-consist').value = 'na';
+    document.getElementById('f-wanted').value = 'yes';
+    document.getElementById('f-provider').value = 'Anthropic';
+    document.getElementById('f-date').value = new Date().toISOString().slice(0,10);
+    document.getElementById('f-missing').value = '';
+    document.getElementById('f-memo').value = '';
+  }
+  document.getElementById('modal-overlay').classList.add('open');
+}
+function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); }
+function overlayClick(e) { if (e.target === document.getElementById('modal-overlay')) closeModal(); }
+
+function saveEntry() {
+  const file = document.getElementById('f-file').value.trim();
+  const tester = document.getElementById('f-tester').value.trim();
+  if (!file || !tester) { alert('파일명과 테스터 이름은 필수입니다.'); return; }
+  const entry = {
+    id: editId ?? Date.now(),
+    file, tester,
+    run: parseInt(document.getElementById('f-run').value) || 1,
+    cnt: document.getElementById('f-cnt').value === '' ? null : parseInt(document.getElementById('f-cnt').value),
+    consist: document.getElementById('f-consist').value,
+    wanted: document.getElementById('f-wanted').value,
+    provider: document.getElementById('f-provider').value,
+    date: document.getElementById('f-date').value,
+    missing: document.getElementById('f-missing').value.trim(),
+    memo: document.getElementById('f-memo').value.trim(),
+  };
+  if (editId) {
+    const i = entries.findIndex(x => x.id === editId);
+    entries[i] = entry;
+    toast('수정되었습니다');
+  } else {
+    entries.push(entry);
+    toast('저장되었습니다');
+  }
+  save(); closeModal(); updateStats(); render(); populateTesterFilter();
+}
+
+function deleteEntry(id) {
+  if (!confirm('이 항목을 삭제하시겠습니까?')) return;
+  entries = entries.filter(x => x.id !== id);
+  save(); updateStats(); render(); populateTesterFilter();
+  toast('삭제되었습니다');
+}
+
+function updateStats() {
+  document.getElementById('s-total').textContent = entries.length;
+  document.getElementById('s-files').textContent = new Set(entries.map(e => e.file)).size;
+  document.getElementById('s-testers').textContent = new Set(entries.map(e => e.tester)).size;
+  const withCnt = entries.filter(e => e.cnt !== null);
+  document.getElementById('s-avg').textContent = withCnt.length
+    ? Math.round(withCnt.reduce((a, e) => a + e.cnt, 0) / withCnt.length)
+    : '—';
+  const total = entries.length;
+  document.getElementById('s-hit').textContent = total
+    ? Math.round(entries.filter(e => e.wanted === 'yes').length / total * 100) + '%'
+    : '—';
+}
+
+function populateTesterFilter() {
+  const sel = document.getElementById('filter-tester');
+  const cur = sel.value;
+  const testers = [...new Set(entries.map(e => e.tester))].sort();
+  sel.innerHTML = '<option value="">전체 테스터</option>' +
+    testers.map(t => `<option value="${t}">${t}</option>`).join('');
+  if (testers.includes(cur)) sel.value = cur;
+}
+
+function render() {
+  const fFile = document.getElementById('filter-file').value.toLowerCase();
+  const fTester = document.getElementById('filter-tester').value;
+  const fWanted = document.getElementById('filter-wanted').value;
+  const fProvider = document.getElementById('filter-provider').value;
+
+  const rows = entries.filter(e => {
+    if (fFile && !e.file.toLowerCase().includes(fFile)) return false;
+    if (fTester && e.tester !== fTester) return false;
+    if (fWanted && e.wanted !== fWanted) return false;
+    if (fProvider && e.provider !== fProvider) return false;
+    return true;
+  }).sort((a, b) => b.id - a.id);
+
+  const tbody = document.getElementById('tbody');
+  const empty = document.getElementById('empty');
+  empty.style.display = entries.length === 0 ? 'block' : 'none';
+
+  tbody.innerHTML = rows.map(e => `
+    <tr>
+      <td>
+        <div class="filename">${esc(e.file)}</div>
+        <div class="file-date">${e.date || ''}</div>
+      </td>
+      <td>${esc(e.tester)}</td>
+      <td style="text-align:center"><span class="badge na">${e.run}회</span></td>
+      <td style="text-align:center;font-weight:500">${e.cnt !== null ? e.cnt : '—'}</td>
+      <td><span class="badge ${consistBadge[e.consist]}">${consistLabel[e.consist]}</span></td>
+      <td><span class="badge ${wantedBadge[e.wanted]}">${wantedLabel[e.wanted]}</span></td>
+      <td><span class="badge purple">${esc(e.provider)}</span></td>
+      <td>
+        ${e.missing ? `<div class="missing-tag"><i class="ti ti-alert-circle" style="font-size:11px;vertical-align:-1px"></i> ${esc(e.missing)}</div>` : ''}
+        <div class="memo-text">${e.memo ? esc(e.memo) : '<span style="color:#ccc">—</span>'}</div>
+      </td>
+      <td style="white-space:nowrap">
+        <button class="icon-btn" onclick="openModal(${e.id})" title="수정"><i class="ti ti-edit"></i></button>
+        <button class="icon-btn del" onclick="deleteEntry(${e.id})" title="삭제"><i class="ti ti-trash"></i></button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function exportCSV() {
+  if (entries.length === 0) { toast('내보낼 데이터가 없습니다'); return; }
+  const headers = ['파일명','테스터','회차','용어 수','일관성','원하는 용어 추출','AI 제공자','날짜','누락 용어','메모'];
+  const rows = entries.map(e => [
+    e.file, e.tester, e.run, e.cnt ?? '', consistLabel[e.consist],
+    wantedLabel[e.wanted], e.provider, e.date, e.missing, e.memo
+  ].map(v => `"${String(v).replace(/"/g,'""')}"`).join(','));
+  const blob = new Blob(['\uFEFF' + headers.join(',') + '\n' + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'glossary_feedback_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+  toast('CSV 내보내기 완료');
+}
+
+updateStats(); render(); populateTesterFilter();
+</script>
+</body>
+</html>
