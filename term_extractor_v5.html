@@ -1132,6 +1132,7 @@ function saveFeedbackEntry(){
     fbEntries.push(entry);
     // 새 항목만 구글 시트로 전송 (수정은 제외)
    try{ sendToSheets(entry); }catch(e){}
+}    
   saveFbEntries();closeFeedbackModal();
   renderFeedbackStats();renderFeedback();
   const sheetsUrl = localStorage.getItem(SHEETS_URL_KEY);
