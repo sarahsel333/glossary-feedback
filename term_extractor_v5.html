@@ -196,7 +196,7 @@ tbody tr:hover td{background:#fafafa}
     <div class="tbl-wrap">
       <table>
         <colgroup><col style="min-width:150px"><col style="width:70px"><col style="width:48px"><col style="width:52px"><col style="width:70px"><col style="width:75px"><col style="width:75px"><col style="width:60px"><col><col style="width:56px"></colgroup>
-        <thead><tr><th>파일명</th><th>테스터</th><th>회차</th><th>용어 수</th><th>일관성</th><th>원하는 용어</th><th>AI</th><th>파일 종류</th><th>누락 / 불필요 / 개선 의견</th><th></th></tr></thead>
+        <thead><tr><th>파일명</th><th>테스터</th><th>회차</th><th>용어 수</th><th>일관성</th><th>원하는 용어</th><th>AI</th><th>파일 종류</th><th>누락 / 불필요 / 사유 / 개선 의견</th><th></th></tr></thead>
         <tbody id="fb-tbody"></tbody>
       </table>
       <div class="empty" id="fb-empty">아직 기록된 결과가 없습니다.</div>
@@ -225,6 +225,7 @@ tbody tr:hover td{background:#fafafa}
     <div class="form-grid full"><div class="field"><label>날짜 / 시간</label><input type="datetime-local" id="fm-date"/></div></div>
     <div class="form-grid full"><div class="field"><label>누락된 용어 <span style="color:#94a3b8;font-weight:400">(있어야 하는데 안 나온 것)</span></label><textarea id="fm-missing" placeholder="예: Hero King, Dynamic LOD system"></textarea></div></div>
     <div class="form-grid full"><div class="field"><label>불필요하게 추출된 용어 <span style="color:#94a3b8;font-weight:400">(나오면 안 되는데 나온 것)</span></label><textarea id="fm-unnecessary" placeholder="예: Western market, Full Production"></textarea></div></div>
+    <div class="form-grid full"><div class="field"><label>불필요 추출 사유</label><select id="fm-unnecessary-reason"><option value="">선택</option><option value="generic">일반 용어</option><option value="unneeded">불필요한 용어</option><option value="duplicate">중복</option><option value="transliteration">단순 음역 / 카테고리명</option><option value="phrase">문장 / 구 단위 추출</option><option value="unsupported">번역 오류 / 근거 없음</option><option value="other">기타</option></select></div></div>
     <div class="form-grid full"><div class="field"><label>개선 제안 <span style="color:#94a3b8;font-weight:400">(프롬프트 개선에 활용)</span></label><textarea id="fm-memo" placeholder="예: 게임 고유명사는 잘 나오나 HR 용어 누락이 많음"></textarea></div></div>
     <div class="modal-footer">
       <button class="btn" onclick="closeFeedbackModal()">취소</button>
@@ -246,7 +247,9 @@ const CONSIST_CLS={na:"badge-na",same:"badge-good",minor:"badge-warn",diff:"badg
 const WANTED_LABEL={yes:"예",partial:"일부",no:"아니오"};
 const WANTED_CLS={yes:"badge-good",partial:"badge-warn",no:"badge-bad"};
 const FILETYPE_LABEL={game:"게임 덱",hr:"HR/평가",invest:"투자 자료",tech:"기술 문서",other:"기타"};
+const UNNECESSARY_REASON_LABEL={generic:"일반 용어",unneeded:"불필요한 용어",duplicate:"중복",transliteration:"단순 음역 / 카테고리명",phrase:"문장 / 구 단위 추출",unsupported:"번역 오류 / 근거 없음",other:"기타"};
 const SHEETS_URL_KEY="fb_sheets_url";
+const DEFAULT_SHEETS_URL="https://script.google.com/macros/s/AKfycbz8xXDdxM5wwBlwCJ6LKQkrbFbIGXs6Ou-AxWb5MN86R4YDGUidQHcm6-5SGxZ7aBA/exec";
 
 let provider=localStorage.getItem("fb_provider")||"anthropic";
 let candidates=[],decisions={};
@@ -306,12 +309,12 @@ function getKey(){return provider==="anthropic"?localStorage.getItem("fb_key_ant
 setProvider(provider);
 
 document.addEventListener("DOMContentLoaded",function(){
-  const saved=localStorage.getItem(SHEETS_URL_KEY);
+  const saved=localStorage.getItem(SHEETS_URL_KEY)||DEFAULT_SHEETS_URL;
   if(saved){
     const el=document.getElementById("sheets-url");
     if(el)el.value=saved;
     const st=document.getElementById("sheets-status");
-    if(st){st.textContent="✅ 저장된 URL 있음";st.style.color="#10b981";}
+    if(st){st.textContent=localStorage.getItem(SHEETS_URL_KEY)?"✅ 저장된 URL 있음":"✅ 기본 Google Sheet URL 설정됨";st.style.color="#10b981";}
   }
 });
 
@@ -324,17 +327,17 @@ function saveSheetUrl(){
   showToast("구글 시트 URL 저장됨");
 }
 async function testSheetUrl(){
-  const url=localStorage.getItem(SHEETS_URL_KEY)||document.getElementById("sheets-url").value.trim();
+  const url=localStorage.getItem(SHEETS_URL_KEY)||document.getElementById("sheets-url").value.trim()||DEFAULT_SHEETS_URL;
   if(!url){showToast("먼저 URL을 저장하세요");return;}
   const st=document.getElementById("sheets-status");
   st.textContent="연결 테스트 중...";st.style.color="#94a3b8";
   try{
-    await sendToSheets({file:"테스트",tester:"테스트",run:0,cnt:0,filetype:"",consist:"na",wanted:"yes",provider:"테스트",date:nowDatetime(),missing:"",unnecessary:"",memo:"연결 테스트 — 이 행은 삭제해도 됩니다"});
+    await sendToSheets({file:"테스트",tester:"테스트",run:0,cnt:0,filetype:"",consist:"na",wanted:"yes",provider:"테스트",date:nowDatetime(),missing:"",unnecessary:"",unnecessaryReason:"",memo:"연결 테스트 — 이 행은 삭제해도 됩니다"});
     st.textContent="✅ 연결 성공!";st.style.color="#10b981";
   }catch(e){st.textContent="❌ 연결 실패: "+e.message;st.style.color="#ef4444";}
 }
 async function sendToSheets(entry){
-  const url=localStorage.getItem(SHEETS_URL_KEY);
+  const url=localStorage.getItem(SHEETS_URL_KEY)||DEFAULT_SHEETS_URL;
   if(!url)return;
   await fetch(url,{method:"POST",mode:"no-cors",headers:{"Content-Type":"application/json"},body:JSON.stringify(entry)});
 }
@@ -532,8 +535,8 @@ function autoRunNumber(filename){if(!filename)return 1;return fbEntries.filter(e
 function onFileInputChange(val){if(fbEditId)return;const run=autoRunNumber(val.trim());document.getElementById("fm-run").value=run;document.getElementById("fm-consist").value=run===1?"na":"same";}
 function renderFeedbackStats(){document.getElementById("fs-total").textContent=fbEntries.length;document.getElementById("fs-files").textContent=new Set(fbEntries.map(e=>e.file)).size;const wc2=fbEntries.filter(e=>e.cnt!==null&&e.cnt!==undefined);document.getElementById("fs-avg").textContent=wc2.length?Math.round(wc2.reduce((a,e)=>a+e.cnt,0)/wc2.length):"—";document.getElementById("fs-hit").textContent=fbEntries.length?Math.round(fbEntries.filter(e=>e.wanted==="yes").length/fbEntries.length*100)+"%":"—";}
 function populateTesterFilter(){const sel=document.getElementById("fb-filter-tester");const cur=sel.value;const testers=[...new Set(fbEntries.map(e=>e.tester))].sort();sel.innerHTML='<option value="">전체 테스터</option>'+testers.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join("");if(testers.includes(cur))sel.value=cur;}
-function renderFeedback(){populateTesterFilter();const fFile=document.getElementById("fb-filter-file").value.toLowerCase();const fTester=document.getElementById("fb-filter-tester").value;const fWanted=document.getElementById("fb-filter-wanted").value;const rows=fbEntries.filter(e=>{if(fFile&&!e.file.toLowerCase().includes(fFile))return false;if(fTester&&e.tester!==fTester)return false;if(fWanted&&e.wanted!==fWanted)return false;return true;}).sort((a,b)=>b.id-a.id);document.getElementById("fb-empty").style.display=fbEntries.length?"none":"block";document.getElementById("fb-tbody").innerHTML=rows.map(e=>`<tr><td style="max-width:160px"><div style="font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(e.file)}">${esc(e.file)}</div><div style="font-size:10px;color:#94a3b8;white-space:nowrap">${formatDatetime(e.date)}</div></td><td>${esc(e.tester)}</td><td style="text-align:center">${e.run}회</td><td style="text-align:center;font-weight:600">${e.cnt!==null&&e.cnt!==undefined?e.cnt:"—"}</td><td><span class="badge ${CONSIST_CLS[e.consist]}">${CONSIST_LABEL[e.consist]}</span></td><td><span class="badge ${WANTED_CLS[e.wanted]}">${WANTED_LABEL[e.wanted]}</span></td><td style="font-size:11px;color:#64748b">${esc(e.provider)}</td><td style="font-size:11px;color:#64748b">${e.filetype?esc(FILETYPE_LABEL[e.filetype]||e.filetype):"—"}</td><td>${e.missing?`<div style="font-size:11px;margin-bottom:3px"><span style="color:#b91c1c;font-weight:600">누락:</span> ${esc(e.missing)}</div>`:""}${e.unnecessary?`<div style="font-size:11px;margin-bottom:3px"><span style="color:#d97706;font-weight:600">불필요:</span> ${esc(e.unnecessary)}</div>`:""}${e.memo?`<div style="font-size:11px"><span style="color:#6366f1;font-weight:600">제안:</span> ${esc(e.memo)}</div>`:""}${!e.missing&&!e.unnecessary&&!e.memo?`<span style="color:#94a3b8;font-size:11px">—</span>`:""}</td><td style="white-space:nowrap"><button class="icon-btn" onclick="editFeedback(${e.id})">✏️</button><button class="icon-btn del" onclick="deleteFeedback(${e.id})">🗑</button></td></tr>`).join("");}
-function openFeedbackModal(id){fbEditId=id??null;document.getElementById("fb-modal-title").textContent=id?"결과 수정":"새 결과 추가";if(id){const e=fbEntries.find(x=>x.id===id);document.getElementById("fm-file").value=e.file;document.getElementById("fm-tester").value=e.tester;document.getElementById("fm-run").value=e.run;document.getElementById("fm-cnt").value=e.cnt??"";document.getElementById("fm-filetype").value=e.filetype||"";document.getElementById("fm-consist").value=e.consist;document.getElementById("fm-wanted").value=e.wanted;document.getElementById("fm-provider").value=e.provider;document.getElementById("fm-date").value=e.date||"";document.getElementById("fm-missing").value=e.missing||"";document.getElementById("fm-unnecessary").value=e.unnecessary||"";document.getElementById("fm-memo").value=e.memo||"";}else{const defaultFile=srcFile?srcFile.name:"";document.getElementById("fm-file").value=defaultFile;document.getElementById("fm-tester").value="";document.getElementById("fm-run").value=autoRunNumber(defaultFile);document.getElementById("fm-cnt").value=candidates.length||"";document.getElementById("fm-filetype").value="";document.getElementById("fm-consist").value=autoRunNumber(defaultFile)===1?"na":"same";document.getElementById("fm-wanted").value="yes";document.getElementById("fm-provider").value=provider==="openai"?"OpenAI":"Anthropic";document.getElementById("fm-date").value=nowDatetime();document.getElementById("fm-missing").value="";document.getElementById("fm-unnecessary").value="";document.getElementById("fm-memo").value="";}document.getElementById("fb-modal").classList.add("open");}
+function renderFeedback(){populateTesterFilter();const fFile=document.getElementById("fb-filter-file").value.toLowerCase();const fTester=document.getElementById("fb-filter-tester").value;const fWanted=document.getElementById("fb-filter-wanted").value;const rows=fbEntries.filter(e=>{if(fFile&&!e.file.toLowerCase().includes(fFile))return false;if(fTester&&e.tester!==fTester)return false;if(fWanted&&e.wanted!==fWanted)return false;return true;}).sort((a,b)=>b.id-a.id);document.getElementById("fb-empty").style.display=fbEntries.length?"none":"block";document.getElementById("fb-tbody").innerHTML=rows.map(e=>`<tr><td style="max-width:160px"><div style="font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(e.file)}">${esc(e.file)}</div><div style="font-size:10px;color:#94a3b8;white-space:nowrap">${formatDatetime(e.date)}</div></td><td>${esc(e.tester)}</td><td style="text-align:center">${e.run}회</td><td style="text-align:center;font-weight:600">${e.cnt!==null&&e.cnt!==undefined?e.cnt:"—"}</td><td><span class="badge ${CONSIST_CLS[e.consist]}">${CONSIST_LABEL[e.consist]}</span></td><td><span class="badge ${WANTED_CLS[e.wanted]}">${WANTED_LABEL[e.wanted]}</span></td><td style="font-size:11px;color:#64748b">${esc(e.provider)}</td><td style="font-size:11px;color:#64748b">${e.filetype?esc(FILETYPE_LABEL[e.filetype]||e.filetype):"—"}</td><td>${e.missing?`<div style="font-size:11px;margin-bottom:3px"><span style="color:#b91c1c;font-weight:600">누락:</span> ${esc(e.missing)}</div>`:""}${e.unnecessary?`<div style="font-size:11px;margin-bottom:3px"><span style="color:#d97706;font-weight:600">불필요:</span> ${esc(e.unnecessary)}</div>`:""}${e.unnecessaryReason?`<div style="font-size:11px;margin-bottom:3px"><span style="color:#d97706;font-weight:600">사유:</span> ${esc(UNNECESSARY_REASON_LABEL[e.unnecessaryReason]||e.unnecessaryReason)}</div>`:""}${e.memo?`<div style="font-size:11px"><span style="color:#6366f1;font-weight:600">제안:</span> ${esc(e.memo)}</div>`:""}${!e.missing&&!e.unnecessary&&!e.unnecessaryReason&&!e.memo?`<span style="color:#94a3b8;font-size:11px">—</span>`:""}</td><td style="white-space:nowrap"><button class="icon-btn" onclick="editFeedback(${e.id})">✏️</button><button class="icon-btn del" onclick="deleteFeedback(${e.id})">🗑</button></td></tr>`).join("");}
+function openFeedbackModal(id){fbEditId=id??null;document.getElementById("fb-modal-title").textContent=id?"결과 수정":"새 결과 추가";if(id){const e=fbEntries.find(x=>x.id===id);document.getElementById("fm-file").value=e.file;document.getElementById("fm-tester").value=e.tester;document.getElementById("fm-run").value=e.run;document.getElementById("fm-cnt").value=e.cnt??"";document.getElementById("fm-filetype").value=e.filetype||"";document.getElementById("fm-consist").value=e.consist;document.getElementById("fm-wanted").value=e.wanted;document.getElementById("fm-provider").value=e.provider;document.getElementById("fm-date").value=e.date||"";document.getElementById("fm-missing").value=e.missing||"";document.getElementById("fm-unnecessary").value=e.unnecessary||"";document.getElementById("fm-unnecessary-reason").value=e.unnecessaryReason||"";document.getElementById("fm-memo").value=e.memo||"";}else{const defaultFile=srcFile?srcFile.name:"";document.getElementById("fm-file").value=defaultFile;document.getElementById("fm-tester").value="";document.getElementById("fm-run").value=autoRunNumber(defaultFile);document.getElementById("fm-cnt").value=candidates.length||"";document.getElementById("fm-filetype").value="";document.getElementById("fm-consist").value=autoRunNumber(defaultFile)===1?"na":"same";document.getElementById("fm-wanted").value="yes";document.getElementById("fm-provider").value=provider==="openai"?"OpenAI":"Anthropic";document.getElementById("fm-date").value=nowDatetime();document.getElementById("fm-missing").value="";document.getElementById("fm-unnecessary").value="";document.getElementById("fm-unnecessary-reason").value="";document.getElementById("fm-memo").value="";}document.getElementById("fb-modal").classList.add("open");}
 function closeFeedbackModal(){document.getElementById("fb-modal").classList.remove("open");}
 function modalOverlayClick(e){if(e.target===document.getElementById("fb-modal"))closeFeedbackModal();}
 function editFeedback(id){openFeedbackModal(id);}
@@ -542,7 +545,7 @@ function saveFeedbackEntry(){
   const file=document.getElementById("fm-file").value.trim();
   const tester=document.getElementById("fm-tester").value.trim();
   if(!file||!tester){alert("파일명과 테스터 이름은 필수입니다.");return;}
-  const entry={id:fbEditId??Date.now(),file,tester,run:parseInt(document.getElementById("fm-run").value)||1,cnt:document.getElementById("fm-cnt").value===""?null:parseInt(document.getElementById("fm-cnt").value),filetype:document.getElementById("fm-filetype").value,consist:document.getElementById("fm-consist").value,wanted:document.getElementById("fm-wanted").value,provider:document.getElementById("fm-provider").value,date:document.getElementById("fm-date").value,missing:document.getElementById("fm-missing").value.trim(),unnecessary:document.getElementById("fm-unnecessary").value.trim(),memo:document.getElementById("fm-memo").value.trim()};
+  const entry={id:fbEditId??Date.now(),file,tester,run:parseInt(document.getElementById("fm-run").value)||1,cnt:document.getElementById("fm-cnt").value===""?null:parseInt(document.getElementById("fm-cnt").value),filetype:document.getElementById("fm-filetype").value,consist:document.getElementById("fm-consist").value,wanted:document.getElementById("fm-wanted").value,provider:document.getElementById("fm-provider").value,date:document.getElementById("fm-date").value,missing:document.getElementById("fm-missing").value.trim(),unnecessary:document.getElementById("fm-unnecessary").value.trim(),unnecessaryReason:document.getElementById("fm-unnecessary-reason").value,memo:document.getElementById("fm-memo").value.trim()};
   if(fbEditId){
     const i=fbEntries.findIndex(x=>x.id===fbEditId);
     fbEntries[i]=entry;
@@ -554,9 +557,9 @@ function saveFeedbackEntry(){
   closeFeedbackModal();
   renderFeedbackStats();
   renderFeedback();
-  showToast(fbEditId?"수정되었습니다":(localStorage.getItem(SHEETS_URL_KEY)?"저장됨 + 구글 시트 전송":"저장되었습니다"));
+  showToast(fbEditId?"수정되었습니다":((localStorage.getItem(SHEETS_URL_KEY)||DEFAULT_SHEETS_URL)?"저장됨 + 구글 시트 전송":"저장되었습니다"));
 }
-function exportFeedbackCSV(){if(!fbEntries.length){showToast("내보낼 데이터가 없습니다");return;}const headers=["파일명","테스터","회차","용어 수","파일 종류","일관성","원하는 용어 추출","AI 제공자","날짜","누락된 용어","불필요한 용어","개선 제안"];const rows=fbEntries.map(e=>[e.file,e.tester,e.run,e.cnt??"",FILETYPE_LABEL[e.filetype]||e.filetype||"",CONSIST_LABEL[e.consist],WANTED_LABEL[e.wanted],e.provider,e.date,e.missing||"",e.unnecessary||"",e.memo||""].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(","));dl("\uFEFF"+headers.join(",")+"\n"+rows.join("\n"),"glossary_feedback_"+new Date().toISOString().slice(0,10)+".csv","text/csv;charset=utf-8");showToast("CSV 내보내기 완료");}
+function exportFeedbackCSV(){if(!fbEntries.length){showToast("내보낼 데이터가 없습니다");return;}const headers=["파일명","테스터","회차","용어 수","파일 종류","일관성","원하는 용어 추출","AI 제공자","날짜","누락된 용어","불필요한 용어","불필요 추출 사유","개선 제안"];const rows=fbEntries.map(e=>[e.file,e.tester,e.run,e.cnt??"",FILETYPE_LABEL[e.filetype]||e.filetype||"",CONSIST_LABEL[e.consist],WANTED_LABEL[e.wanted],e.provider,e.date,e.missing||"",e.unnecessary||"",UNNECESSARY_REASON_LABEL[e.unnecessaryReason]||e.unnecessaryReason||"",e.memo||""].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(","));dl("\uFEFF"+headers.join(",")+"\n"+rows.join("\n"),"glossary_feedback_"+new Date().toISOString().slice(0,10)+".csv","text/csv;charset=utf-8");showToast("CSV 내보내기 완료");}
 </script>
 </body>
 </html>
