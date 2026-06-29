@@ -108,7 +108,7 @@ tbody tr:hover td{background:#fafafa}
       <div id="key-status" style="font-size:11px;color:#94a3b8;margin-top:6px"></div>
     </div>
     <div class="card">
-      <div class="card-title">파일 업로드</div>
+      <div class="card-title">입력 자료</div>
       <div style="display:flex;flex-direction:column;gap:10px">
         <label id="zone-src" class="upload-zone" for="file-src">
           <input type="file" id="file-src" accept=".pptx" style="display:none" onchange="handleFile(this,'src')"/>
@@ -122,6 +122,12 @@ tbody tr:hover td{background:#fafafa}
           <div><div class="upload-label" id="tgt-label" style="color:#0ea5e9">번역 PPT (KO)</div><div class="upload-hint" id="tgt-hint">.pptx 파일 선택</div></div>
           <button id="tgt-remove" style="display:none;margin-left:auto" class="btn sm red" onclick="removeFile(event,'tgt')">✕</button>
         </label>
+        <div style="font-size:12px;color:#64748b;font-weight:600;margin-top:4px">또는 SharePoint PPT 링크</div>
+        <div class="form-grid">
+          <div class="field"><label>원문 SharePoint 링크 (EN)</label><input type="text" id="link-src" placeholder="https://...pptx 또는 SharePoint 공유 링크" oninput="updateCTA()"/></div>
+          <div class="field"><label>번역문 SharePoint 링크 (KO)</label><input type="text" id="link-tgt" placeholder="https://...pptx 또는 SharePoint 공유 링크" oninput="updateCTA()"/></div>
+        </div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:-4px">링크는 브라우저에서 접근 가능한 PPTX 다운로드 링크여야 합니다. 회사 보안/CORS 정책으로 막히면 파일 업로드나 텍스트 붙여넣기를 사용해주세요.</div>
         <div style="font-size:12px;color:#64748b;font-weight:600;margin-top:4px">또는 텍스트 바로 붙여넣기</div>
         <div class="form-grid">
           <div class="field"><label>원문 텍스트 (EN)</label><textarea id="manual-src" placeholder="원문 텍스트를 붙여넣으세요" oninput="updateCTA()" style="min-height:120px"></textarea></div>
@@ -133,7 +139,7 @@ tbody tr:hover td{background:#fafafa}
     <div class="card" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
       <div>
         <div style="font-weight:700;font-size:14px;margin-bottom:3px">글로서리 추출</div>
-        <div id="cta-hint" style="font-size:12px;color:#94a3b8">원문과 번역 파일을 업로드하거나 텍스트를 붙여넣으세요.</div>
+        <div id="cta-hint" style="font-size:12px;color:#94a3b8">원문과 번역 파일을 업로드하거나 SharePoint 링크/텍스트를 입력하세요.</div>
       </div>
       <button id="btn-extract" class="btn primary" onclick="startExtraction()" disabled>추출 실행</button>
     </div>
@@ -421,8 +427,34 @@ function removeFile(e,side){
   candidates=[];decisions={};document.getElementById("candidate-section").style.display="none";updateCTA();
 }
 function manualText(side){const id=side==="src"?"manual-src":"manual-tgt";return (document.getElementById(id)?.value||"").trim();}
-function hasSourceInput(){return Boolean(srcFile||manualText("src"));}
-function hasTargetInput(){return Boolean(tgtFile||manualText("tgt"));}
+function shareLink(side){const id=side==="src"?"link-src":"link-tgt";return (document.getElementById(id)?.value||"").trim();}
+function hasSourceInput(){return Boolean(srcFile||shareLink("src")||manualText("src"));}
+function hasTargetInput(){return Boolean(tgtFile||shareLink("tgt")||manualText("tgt"));}
+function getLinkFileName(url,side){
+  try{
+    const path=decodeURIComponent(new URL(url).pathname);
+    const name=path.split("/").filter(Boolean).pop()||"";
+    return /\.pptx?$/i.test(name)?name:(side==="src"?"SharePoint_EN.pptx":"SharePoint_KO.pptx");
+  }catch{return side==="src"?"SharePoint_EN.pptx":"SharePoint_KO.pptx";}
+}
+function toSharePointDownloadUrl(raw){
+  let url;
+  try{url=new URL(raw);}
+  catch{throw new Error("SharePoint 링크 형식이 올바르지 않습니다. https:// 로 시작하는 공유 링크를 입력해주세요.");}
+  if(url.searchParams.get("web")==="1")url.searchParams.delete("web");
+  if(!url.searchParams.has("download"))url.searchParams.set("download","1");
+  return url.toString();
+}
+async function fetchPPTXFromLink(raw,side){
+  const url=toSharePointDownloadUrl(raw);
+  let res;
+  try{res=await fetch(url,{credentials:"include",redirect:"follow"});}
+  catch{throw new Error("브라우저가 SharePoint 링크에 직접 접근하지 못했습니다. 회사 보안/CORS 정책으로 막힌 경우 파일 업로드나 텍스트 붙여넣기를 사용해주세요.");}
+  if(!res.ok)throw new Error(`SharePoint 링크를 열 수 없습니다 (${res.status}). 파일 권한 또는 링크를 확인해주세요.`);
+  const blob=await res.blob();
+  if(blob.type&&/html/i.test(blob.type))throw new Error("SharePoint에서 PPTX 대신 로그인/미리보기 페이지가 내려왔습니다. 다운로드 가능한 공유 링크인지 확인하거나 파일 업로드를 사용해주세요.");
+  return new File([blob],getLinkFileName(raw,side),{type:blob.type||"application/vnd.openxmlformats-officedocument.presentationml.presentation"});
+}
 function textToSlideBlocks(text,label){
   const parts=String(text||"").split(/\n{2,}/).map(t=>cleanText(t)).filter(Boolean);
   const chunks=[];let buf="";
@@ -438,7 +470,7 @@ function textToSlideBlocks(text,label){
 function updateCTA(){
   const ready=hasSourceInput()&&hasTargetInput();
   document.getElementById("btn-extract").disabled=!ready;
-  document.getElementById("cta-hint").textContent=ready?"준비 완료! 추출 버튼을 누르세요.":"원문과 번역 파일을 업로드하거나 텍스트를 붙여넣으세요.";
+  document.getElementById("cta-hint").textContent=ready?"준비 완료! 추출 버튼을 누르세요.":"원문과 번역 파일을 업로드하거나 SharePoint 링크/텍스트를 입력하세요.";
 }
 
 function buildPrompt(cats){return `Bilingual terminology extractor for a translation team.
@@ -533,14 +565,13 @@ async function callBatch(slideBlocks,bi,total){
 async function startExtraction(){
   const key=getKey();
   if(!key){showErr("API 키를 먼저 입력하고 저장하세요.");return;}
-  if(!hasSourceInput()||!hasTargetInput()){showErr("원문과 번역문을 파일로 업로드하거나 텍스트로 붙여넣으세요.");return;}
+  if(!hasSourceInput()||!hasTargetInput()){showErr("원문과 번역문을 파일, SharePoint 링크, 텍스트 중 하나로 입력하세요.");return;}
   document.getElementById("loading").style.display="block";document.getElementById("extract-error").style.display="none";document.getElementById("candidate-section").style.display="none";document.getElementById("btn-extract").disabled=true;candidates=[];decisions={};
   try{
-    setLoadMsg(srcFile||tgtFile?"📂 텍스트 준비 중...":"📝 붙여넣은 텍스트 준비 중...");
-    const[src,tgt]=await Promise.all([
-      srcFile?extractPPTX(srcFile,"EN"):Promise.resolve(textToSlideBlocks(manualText("src"),"EN")),
-      tgtFile?extractPPTX(tgtFile,"KO"):Promise.resolve(textToSlideBlocks(manualText("tgt"),"KO"))
-    ]);
+    setLoadMsg(shareLink("src")||shareLink("tgt")?"🔗 SharePoint 링크에서 PPT 준비 중...":(srcFile||tgtFile?"📂 텍스트 준비 중...":"📝 붙여넣은 텍스트 준비 중..."));
+    const srcTask=srcFile?extractPPTX(srcFile,"EN"):(shareLink("src")?fetchPPTXFromLink(shareLink("src"),"src").then(f=>extractPPTX(f,"EN")):Promise.resolve(textToSlideBlocks(manualText("src"),"EN")));
+    const tgtTask=tgtFile?extractPPTX(tgtFile,"KO"):(shareLink("tgt")?fetchPPTXFromLink(shareLink("tgt"),"tgt").then(f=>extractPPTX(f,"KO")):Promise.resolve(textToSlideBlocks(manualText("tgt"),"KO")));
+    const[src,tgt]=await Promise.all([srcTask,tgtTask]);
     if(!src.trim())throw new Error("원문에서 텍스트를 읽지 못했습니다.");
     if(!tgt.trim())throw new Error("번역문에서 텍스트를 읽지 못했습니다.");
     srcText=src;tgtText=tgt;
@@ -575,7 +606,7 @@ function renderFeedbackStats(){document.getElementById("fs-total").textContent=f
 function populateTesterFilter(){const sel=document.getElementById("fb-filter-tester");const cur=sel.value;const testers=[...new Set(fbEntries.map(e=>e.tester))].sort();sel.innerHTML='<option value="">전체 테스터</option>'+testers.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join("");if(testers.includes(cur))sel.value=cur;}
 function renderFeedback(){populateTesterFilter();const fFile=document.getElementById("fb-filter-file").value.toLowerCase();const fTester=document.getElementById("fb-filter-tester").value;const fWanted=document.getElementById("fb-filter-wanted").value;const rows=fbEntries.filter(e=>{if(fFile&&!e.file.toLowerCase().includes(fFile))return false;if(fTester&&e.tester!==fTester)return false;if(fWanted&&e.wanted!==fWanted)return false;return true;}).sort((a,b)=>b.id-a.id);document.getElementById("fb-empty").style.display=fbEntries.length?"none":"block";document.getElementById("fb-tbody").innerHTML=rows.map(e=>`<tr><td style="max-width:160px"><div style="font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(e.file)}">${esc(e.file)}</div><div style="font-size:10px;color:#94a3b8;white-space:nowrap">${formatDatetime(e.date)}</div></td><td>${esc(e.tester)}</td><td style="text-align:center">${e.run}회</td><td style="text-align:center;font-weight:600">${e.cnt!==null&&e.cnt!==undefined?e.cnt:"—"}</td><td><span class="badge ${CONSIST_CLS[e.consist]}">${CONSIST_LABEL[e.consist]}</span></td><td><span class="badge ${WANTED_CLS[e.wanted]}">${WANTED_LABEL[e.wanted]}</span></td><td style="font-size:11px;color:#64748b">${esc(e.provider)}</td><td style="font-size:11px;color:#64748b">${e.filetype?esc(FILETYPE_LABEL[e.filetype]||e.filetype):"—"}</td><td>${e.missing?`<div style="font-size:11px;margin-bottom:3px"><span style="color:#b91c1c;font-weight:600">누락:</span> ${esc(e.missing)}</div>`:""}${e.unnecessary?`<div style="font-size:11px;margin-bottom:3px"><span style="color:#d97706;font-weight:600">불필요:</span> ${esc(e.unnecessary)}</div>`:""}${e.unnecessaryReason?`<div style="font-size:11px;margin-bottom:3px"><span style="color:#d97706;font-weight:600">사유:</span> ${esc(UNNECESSARY_REASON_LABEL[e.unnecessaryReason]||e.unnecessaryReason)}</div>`:""}${e.memo?`<div style="font-size:11px"><span style="color:#6366f1;font-weight:600">제안:</span> ${esc(e.memo)}</div>`:""}${!e.missing&&!e.unnecessary&&!e.unnecessaryReason&&!e.memo?`<span style="color:#94a3b8;font-size:11px">—</span>`:""}</td><td style="white-space:nowrap"><button class="icon-btn" onclick="editFeedback(${e.id})">✏️</button><button class="icon-btn del" onclick="deleteFeedback(${e.id})">🗑</button></td></tr>`).join("");}
 function recordExtractionFeedback(){switchTab("feedback");setTimeout(()=>openFeedbackModal(),0);}
-function openFeedbackModal(id){fbEditId=id??null;document.getElementById("fb-modal-title").textContent=id?"결과 평가 수정":"결과 평가 남기기";if(id){const e=fbEntries.find(x=>x.id===id);document.getElementById("fm-file").value=e.file;document.getElementById("fm-tester").value=e.tester;document.getElementById("fm-run").value=e.run;document.getElementById("fm-cnt").value=e.cnt??"";document.getElementById("fm-filetype").value=e.filetype||"";document.getElementById("fm-consist").value=e.consist;document.getElementById("fm-wanted").value=e.wanted;document.getElementById("fm-provider").value=e.provider;document.getElementById("fm-date").value=e.date||"";document.getElementById("fm-missing").value=e.missing||"";document.getElementById("fm-unnecessary").value=e.unnecessary||"";document.getElementById("fm-unnecessary-reason").value=e.unnecessaryReason||"";document.getElementById("fm-memo").value=e.memo||"";}else{const defaultFile=srcFile?srcFile.name:(manualText("src")?"붙여넣기 텍스트":"");document.getElementById("fm-file").value=defaultFile;document.getElementById("fm-tester").value="";document.getElementById("fm-run").value=autoRunNumber(defaultFile);document.getElementById("fm-cnt").value=candidates.length||"";document.getElementById("fm-filetype").value="";document.getElementById("fm-consist").value=autoRunNumber(defaultFile)===1?"na":"same";document.getElementById("fm-wanted").value="yes";document.getElementById("fm-provider").value=provider==="openai"?"OpenAI":"Anthropic";document.getElementById("fm-date").value=nowDatetime();document.getElementById("fm-missing").value="";document.getElementById("fm-unnecessary").value="";document.getElementById("fm-unnecessary-reason").value="";document.getElementById("fm-memo").value="";}document.getElementById("fb-modal").classList.add("open");}
+function openFeedbackModal(id){fbEditId=id??null;document.getElementById("fb-modal-title").textContent=id?"결과 평가 수정":"결과 평가 남기기";if(id){const e=fbEntries.find(x=>x.id===id);document.getElementById("fm-file").value=e.file;document.getElementById("fm-tester").value=e.tester;document.getElementById("fm-run").value=e.run;document.getElementById("fm-cnt").value=e.cnt??"";document.getElementById("fm-filetype").value=e.filetype||"";document.getElementById("fm-consist").value=e.consist;document.getElementById("fm-wanted").value=e.wanted;document.getElementById("fm-provider").value=e.provider;document.getElementById("fm-date").value=e.date||"";document.getElementById("fm-missing").value=e.missing||"";document.getElementById("fm-unnecessary").value=e.unnecessary||"";document.getElementById("fm-unnecessary-reason").value=e.unnecessaryReason||"";document.getElementById("fm-memo").value=e.memo||"";}else{const defaultFile=srcFile?srcFile.name:(shareLink("src")?getLinkFileName(shareLink("src"),"src"):(manualText("src")?"붙여넣기 텍스트":""));document.getElementById("fm-file").value=defaultFile;document.getElementById("fm-tester").value="";document.getElementById("fm-run").value=autoRunNumber(defaultFile);document.getElementById("fm-cnt").value=candidates.length||"";document.getElementById("fm-filetype").value="";document.getElementById("fm-consist").value=autoRunNumber(defaultFile)===1?"na":"same";document.getElementById("fm-wanted").value="yes";document.getElementById("fm-provider").value=provider==="openai"?"OpenAI":"Anthropic";document.getElementById("fm-date").value=nowDatetime();document.getElementById("fm-missing").value="";document.getElementById("fm-unnecessary").value="";document.getElementById("fm-unnecessary-reason").value="";document.getElementById("fm-memo").value="";}document.getElementById("fb-modal").classList.add("open");}
 function closeFeedbackModal(){document.getElementById("fb-modal").classList.remove("open");}
 function modalOverlayClick(e){if(e.target===document.getElementById("fb-modal"))closeFeedbackModal();}
 function editFeedback(id){openFeedbackModal(id);}
