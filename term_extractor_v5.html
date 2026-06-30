@@ -125,11 +125,11 @@ tbody tr:hover td{background:#fafafa}
         </label>
         <div style="font-size:12px;color:#64748b;font-weight:600;margin-top:4px">또는 SharePoint PPT 링크</div>
         <div class="form-grid">
-          <div class="field"><label>원문 SharePoint 링크 (EN)</label><input type="text" id="link-src" placeholder="https://...pptx 또는 SharePoint 공유 링크" oninput="updateCTA()"/></div>
-          <div class="field"><label>번역문 SharePoint 링크 (KO)</label><input type="text" id="link-tgt" placeholder="https://...pptx 또는 SharePoint 공유 링크" oninput="updateCTA()"/></div>
+          <div class="field"><label>원문 SharePoint 링크 (EN)</label><input type="text" id="link-src" placeholder="https://...pptx 또는 SharePoint 공유 링크" oninput="clearSharePointAttachment('src');updateCTA()"/></div>
+          <div class="field"><label>번역문 SharePoint 링크 (KO)</label><input type="text" id="link-tgt" placeholder="https://...pptx 또는 SharePoint 공유 링크" oninput="clearSharePointAttachment('tgt');updateCTA()"/></div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:-4px">
-          <button class="btn sm" onclick="verifySharePointLinks()">SharePoint 링크 확인 / Microsoft 로그인</button>
+          <button class="btn sm" onclick="attachSharePointLinks()">SharePoint 링크로 파일 첨부</button>
           <span id="sp-status" style="font-size:11px;color:#94a3b8">회사 계정으로 한 번 로그인하면 이후 링크 확인이 더 빨라집니다.</span>
         </div>
         <div style="font-size:11px;color:#94a3b8;margin-top:-4px">회사 SharePoint 링크는 Microsoft 로그인이 필요합니다. 로그인/권한 오류가 나면 파일 업로드나 텍스트 붙여넣기를 사용해주세요.</div>
@@ -290,6 +290,8 @@ let fbEditId=null;
 let srcFile,tgtFile,srcText="",tgtText="";
 let curFilter="all";
 let sharePointMsalClient=null;
+let sharePointMsalReady=null;
+let srcFileSource="",tgtFileSource="";
 
 const norm=v=>String(v||"").trim().toLowerCase().replace(/\s+/g," ");
 const hasHangul=v=>/[\uac00-\ud7a3]/.test(v);
@@ -426,16 +428,22 @@ async function extractPPTX(file,label){
 
 function handleFile(input,side){
   const f=input.files[0];if(!f)return;
-  if(side==="src"){srcFile=f;setSrcUI(f);}else{tgtFile=f;setTgtUI(f);}
+  if(side==="src"){srcFile=f;srcFileSource="local";setSrcUI(f);}else{tgtFile=f;tgtFileSource="local";setTgtUI(f);}
   updateCTA();
 }
 function setSrcUI(f){document.getElementById("src-label").textContent="✅ "+f.name;document.getElementById("src-hint").textContent=(f.size/1024).toFixed(0)+" KB";document.getElementById("zone-src").classList.add("filled");document.getElementById("src-remove").style.display="inline-flex";}
 function setTgtUI(f){document.getElementById("tgt-label").textContent="✅ "+f.name;document.getElementById("tgt-hint").textContent=(f.size/1024).toFixed(0)+" KB";document.getElementById("zone-tgt").classList.add("filled");document.getElementById("tgt-remove").style.display="inline-flex";}
+function resetSrcUI(){document.getElementById("src-label").textContent="원문 PPT (EN)";document.getElementById("src-hint").textContent=".pptx 파일 선택";document.getElementById("zone-src").classList.remove("filled");document.getElementById("src-remove").style.display="none";document.getElementById("file-src").value="";}
+function resetTgtUI(){document.getElementById("tgt-label").textContent="번역 PPT (KO)";document.getElementById("tgt-hint").textContent=".pptx 파일 선택";document.getElementById("zone-tgt").classList.remove("filled");document.getElementById("tgt-remove").style.display="none";document.getElementById("file-tgt").value="";}
 function removeFile(e,side){
   e.preventDefault();e.stopPropagation();
-  if(side==="src"){srcFile=null;srcText="";document.getElementById("src-label").textContent="원문 PPT (EN)";document.getElementById("src-hint").textContent=".pptx 파일 선택";document.getElementById("zone-src").classList.remove("filled");document.getElementById("src-remove").style.display="none";document.getElementById("file-src").value="";}
-  else{tgtFile=null;tgtText="";document.getElementById("tgt-label").textContent="번역 PPT (KO)";document.getElementById("tgt-hint").textContent=".pptx 파일 선택";document.getElementById("zone-tgt").classList.remove("filled");document.getElementById("tgt-remove").style.display="none";document.getElementById("file-tgt").value="";}
+  if(side==="src"){srcFile=null;srcFileSource="";srcText="";resetSrcUI();}
+  else{tgtFile=null;tgtFileSource="";tgtText="";resetTgtUI();}
   candidates=[];decisions={};document.getElementById("candidate-section").style.display="none";updateCTA();
+}
+function clearSharePointAttachment(side){
+  if(side==="src"&&srcFileSource==="sharepoint"){srcFile=null;srcFileSource="";resetSrcUI();}
+  if(side==="tgt"&&tgtFileSource==="sharepoint"){tgtFile=null;tgtFileSource="";resetTgtUI();}
 }
 function manualText(side){const id=side==="src"?"manual-src":"manual-tgt";return (document.getElementById(id)?.value||"").trim();}
 function shareLink(side){const id=side==="src"?"link-src":"link-tgt";return (document.getElementById(id)?.value||"").trim();}
@@ -466,6 +474,8 @@ async function getSharePointMsalClient(){
       cache:{cacheLocation:"localStorage",storeAuthStateInCookie:false},
     });
   }
+  if(!sharePointMsalReady&&sharePointMsalClient.initialize)sharePointMsalReady=sharePointMsalClient.initialize();
+  if(sharePointMsalReady)await sharePointMsalReady;
   return sharePointMsalClient;
 }
 async function getSharePointAccessToken(forceSelectAccount=false){
@@ -514,23 +524,28 @@ async function fetchPPTXFromLink(raw,side){
     return await downloadSharePointFile(item,accessToken,side);
   }catch(err){throw new Error(formatSharePointError(err));}
 }
-async function verifySharePointLinks(){
+async function attachSharePointLinks(){
   const links=[["src",shareLink("src")],["tgt",shareLink("tgt")]].filter(([,url])=>url);
   const st=document.getElementById("sp-status");
   if(!links.length){showToast("SharePoint 링크를 먼저 입력해주세요");return;}
-  st.textContent="Microsoft 로그인 및 링크 확인 중...";st.style.color="#94a3b8";
+  st.textContent="Microsoft 로그인 및 파일 첨부 중...";st.style.color="#94a3b8";
   try{
     const accessToken=await getSharePointAccessToken(true);
     const results=[];
     for(const[side,url]of links){
       const item=await resolveSharePointLink(url,accessToken);
       if(!item.file)throw new Error(`${side==="src"?"원문":"번역문"} 링크가 파일이 아니라 폴더입니다.`);
-      results.push(item.name||getLinkFileName(url,side));
+      const file=await downloadSharePointFile(item,accessToken,side);
+      if(side==="src"){srcFile=file;srcFileSource="sharepoint";setSrcUI(file);}
+      else{tgtFile=file;tgtFileSource="sharepoint";setTgtUI(file);}
+      results.push(file.name);
     }
-    st.textContent=`확인 완료: ${results.join(", ")}`;st.style.color="#10b981";
-    showToast("SharePoint 링크 확인 완료");
+    st.textContent=`첨부 완료: ${results.join(", ")}`;st.style.color="#10b981";
+    updateCTA();
+    showToast("SharePoint 파일 첨부 완료");
   }catch(err){st.textContent=formatSharePointError(err);st.style.color="#ef4444";}
 }
+async function verifySharePointLinks(){return attachSharePointLinks();}
 function textToSlideBlocks(text,label){
   const parts=String(text||"").split(/\n{2,}/).map(t=>cleanText(t)).filter(Boolean);
   const chunks=[];let buf="";
