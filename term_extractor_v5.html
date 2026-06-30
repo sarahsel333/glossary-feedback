@@ -129,7 +129,7 @@ tbody tr:hover td{background:#fafafa}
           <div class="field"><label>번역문 SharePoint 링크 (KO)</label><input type="text" id="link-tgt" placeholder="https://...pptx 또는 SharePoint 공유 링크" oninput="clearSharePointAttachment('tgt');updateCTA()"/></div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:-4px">
-          <button class="btn sm primary" onclick="attachSharePointLinks()">확인</button>
+          <button id="sp-confirm" class="btn sm primary" onclick="attachSharePointLinks()">확인</button>
           <button class="btn sm" onclick="cancelSharePointLinks()">취소</button>
           <span id="sp-status" style="font-size:11px;color:#94a3b8">회사 계정으로 한 번 로그인하면 이후 링크 확인이 더 빨라집니다.</span>
         </div>
@@ -293,6 +293,7 @@ let curFilter="all";
 let sharePointMsalClient=null;
 let sharePointMsalReady=null;
 let srcFileSource="",tgtFileSource="";
+let sharePointAttachBusy=false;
 
 const norm=v=>String(v||"").trim().toLowerCase().replace(/\s+/g," ");
 const hasHangul=v=>/[\uac00-\ud7a3]/.test(v);
@@ -482,6 +483,14 @@ async function getSharePointMsalClient(){
   if(sharePointMsalReady)await sharePointMsalReady;
   return sharePointMsalClient;
 }
+function clearMsalInteractionState(){
+  [localStorage,sessionStorage].forEach(store=>{
+    for(let i=store.length-1;i>=0;i--){
+      const key=store.key(i)||"";
+      if(/interaction\.status|interaction_status/i.test(key))store.removeItem(key);
+    }
+  });
+}
 async function getSharePointAccessToken(forceSelectAccount=false){
   const client=await getSharePointMsalClient();
   const account=forceSelectAccount?null:client.getAllAccounts()[0];
@@ -489,7 +498,15 @@ async function getSharePointAccessToken(forceSelectAccount=false){
     try{return (await client.acquireTokenSilent({account,scopes:SHAREPOINT_SCOPES})).accessToken;}
     catch(err){console.warn("SharePoint silent auth failed",err);}
   }
-  return (await client.acquireTokenPopup({scopes:SHAREPOINT_SCOPES,prompt:forceSelectAccount||!account?"select_account":undefined})).accessToken;
+  try{
+    return (await client.acquireTokenPopup({scopes:SHAREPOINT_SCOPES,prompt:forceSelectAccount||!account?"select_account":undefined})).accessToken;
+  }catch(err){
+    if(/interaction_in_progress/i.test(err?.errorCode||err?.message||"")){
+      clearMsalInteractionState();
+      return (await client.acquireTokenPopup({scopes:SHAREPOINT_SCOPES,prompt:"select_account"})).accessToken;
+    }
+    throw err;
+  }
 }
 function encodeSharePointUrl(url){
   const bytes=new TextEncoder().encode(url.trim());
@@ -529,9 +546,13 @@ async function fetchPPTXFromLink(raw,side){
   }catch(err){throw new Error(formatSharePointError(err));}
 }
 async function attachSharePointLinks(){
+  if(sharePointAttachBusy)return;
   const links=[["src",shareLink("src")],["tgt",shareLink("tgt")]].filter(([,url])=>url);
   const st=document.getElementById("sp-status");
   if(!links.length){showToast("SharePoint 링크를 먼저 입력해주세요");return;}
+  const btn=document.getElementById("sp-confirm");
+  sharePointAttachBusy=true;
+  if(btn){btn.disabled=true;btn.textContent="확인 중...";}
   st.textContent="Microsoft 로그인 및 파일 첨부 중...";st.style.color="#94a3b8";
   try{
     const accessToken=await getSharePointAccessToken(true);
@@ -548,9 +569,14 @@ async function attachSharePointLinks(){
     updateCTA();
     showToast("SharePoint 파일 첨부 완료");
   }catch(err){st.textContent=formatSharePointError(err);st.style.color="#ef4444";}
+  finally{
+    sharePointAttachBusy=false;
+    if(btn){btn.disabled=false;btn.textContent="확인";}
+  }
 }
 async function verifySharePointLinks(){return attachSharePointLinks();}
 function cancelSharePointLinks(){
+  if(sharePointAttachBusy)return;
   document.getElementById("link-src").value="";
   document.getElementById("link-tgt").value="";
   clearSharePointAttachment("src");
