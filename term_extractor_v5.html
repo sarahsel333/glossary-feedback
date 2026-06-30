@@ -267,7 +267,7 @@ const MODEL_OPENAI="gpt-4.1";
 const BATCH_SIZE=60;
 const SLIDE_LIMIT=1200;
 const NUMBERS_ONLY=/^[\d\s,.%+\-x×*\/()]+$/;
-const CATEGORIES=["기술/보안","게임 서비스/운영","게임 일반","HR/조직운영","IP/콘텐츠","공간/시설","법무/계약","AI/개발/툴"];
+const CATEGORIES=["게임, 콘텐츠, 개발","경영, 지원","기술, 플랫폼","사업, 퍼블리싱","전사 회의체","HR, 조직"];
 const GENERIC_PAIR_RE=[/^mass\s+entity\s+tech\|mass\s+entity\s+기술$/i,/^playable\s+demo\|플레이어블\s+데모$/i,/^pre[-\s]?production\|프리\s+프로덕션$/i,/^full\s+production\|풀\s+프로덕션$/i,/^korean\s+fantasy\|한국적\s+판타지$/i,/^publishing\|퍼블리싱$/i,/^new\s+ip\|신규\s+ip$/i,/^(main|vip|regional|world)\s+quest\|.*퀘스트$/i];
 const CONSIST_LABEL={na:"첫 실행",same:"동일",minor:"소폭 차이",diff:"큰 차이"};
 const CONSIST_CLS={na:"badge-na",same:"badge-good",minor:"badge-warn",diff:"badge-bad"};
@@ -635,6 +635,14 @@ function buildPrompt(cats){return `Bilingual terminology extractor for a transla
 - Windless-style: fantasy races, character names, creature/enemy names, weapon/skill names, world-lore nouns, competitor game titles.
 - Include transliterations only when proper nouns: Kamikaze/가미가제, Nhaga/나가, Rekon/레콘, Tokebi/도깨비.
 
+# CATEGORY GUIDANCE
+- 게임, 콘텐츠, 개발: game content, IP/worldbuilding, gameplay systems, development milestones, production terms.
+- 경영, 지원: management, finance, legal, operations, admin/support terms.
+- 기술, 플랫폼: engineering, security, platform, infrastructure, performance, tools.
+- 사업, 퍼블리싱: business, publishing, marketing, market, sales, monetization, partnerships.
+- 전사 회의체: company-wide meeting bodies, committees, councils, steering groups, governance forums.
+- HR, 조직: HR, evaluation, organization, roles, levels, competency, people operations.
+
 # EXCLUDE
 - Company/studio/department/team names.
 - Generic transliterations: Mass Entity/Mass Entity 기술, Playable Demo/플레이어블 데모, Pre-production/프리 프로덕션, Full Production/풀 프로덕션, Publishing/퍼블리싱, New IP/신규 IP, Main Quest/메인 퀘스트.
@@ -642,16 +650,16 @@ function buildPrompt(cats){return `Bilingual terminology extractor for a transla
 # FEW-SHOT EXAMPLES
 ## Extract
 [S1] EN: Rekon 종족의 전설 | KO: Legend of the Rekon race
-{"source":"Rekon","target":"레콘","ref":"S1","context":"Rekon 종족 / Rekon race","reason":"세계관 고유 종족명","aiCategory":"IP/콘텐츠"}
+{"source":"Rekon","target":"레콘","ref":"S1","context":"Rekon 종족 / Rekon race","reason":"세계관 고유 종족명","aiCategory":"게임, 콘텐츠, 개발"}
 
 [S1] EN: Dynamic LOD system 적용으로 성능 개선 | KO: Performance improved by applying 다이내믹 LOD 시스템
-{"source":"Dynamic LOD system","target":"다이내믹 LOD 시스템","ref":"S1","context":"Dynamic LOD system / 다이내믹 LOD 시스템","reason":"성능 최적화 기술 용어","aiCategory":"기술/보안"}
+{"source":"Dynamic LOD system","target":"다이내믹 LOD 시스템","ref":"S1","context":"Dynamic LOD system / 다이내믹 LOD 시스템","reason":"성능 최적화 기술 용어","aiCategory":"기술, 플랫폼"}
 
 [S1] EN: 아라짓 왕국의 영웅왕 | KO: The Hero King of Arajit Kingdom
-{"source":"Arajit Kingdom","target":"아라짓 왕국","ref":"S1","context":"아라짓 왕국 / Arajit Kingdom","reason":"세계관 고유 지명","aiCategory":"IP/콘텐츠"}
+{"source":"Arajit Kingdom","target":"아라짓 왕국","ref":"S1","context":"아라짓 왕국 / Arajit Kingdom","reason":"세계관 고유 지명","aiCategory":"게임, 콘텐츠, 개발"}
 
 [S1] EN: Multi-faceted Feedback 결과를 바탕으로 평가 보정 | KO: Calibration based on 다면 피드백 results
-{"source":"Multi-faceted Feedback","target":"다면 피드백","ref":"S1","context":"Multi-faceted Feedback / 다면 피드백","reason":"인사 평가 절차 전문 용어","aiCategory":"HR/조직운영"}
+{"source":"Multi-faceted Feedback","target":"다면 피드백","ref":"S1","context":"Multi-faceted Feedback / 다면 피드백","reason":"인사 평가 절차 전문 용어","aiCategory":"HR, 조직"}
 
 ## Exclude
 - {"source":"Main Quest","target":"메인 퀘스트"} → generic transliteration
@@ -676,7 +684,7 @@ function buildBatches(src,tgt){
   const blocks=nums.map(n=>{const en=cleanText((enSlides[n]||[]).join(" | ")).slice(0,SLIDE_LIMIT);const ko=cleanText((koSlides[n]||[]).join(" | ")).slice(0,SLIDE_LIMIT);return `[S${n}]\nEN: ${en}\nKO: ${ko}`;}).filter(b=>/EN:\s*\S/.test(b)||/KO:\s*\S/.test(b));
   const batches=[];for(let i=0;i<blocks.length;i+=BATCH_SIZE)batches.push(blocks.slice(i,i+BATCH_SIZE));return batches;
 }
-function normalizeItems(items,bi){return items.filter(x=>x&&x.source&&x.target).map((x,i)=>({id:`c-${Date.now()}-${bi}-${i}`,source:String(x.source||"").trim(),target:String(x.target||"").trim(),ref:String(x.ref||"").trim(),context:x.context||"",reason:x.reason||"",aiCategory:CATEGORIES.includes(x.aiCategory)?x.aiCategory:"게임 일반"})).filter(x=>!isFatal(x.source,x.target));}
+function normalizeItems(items,bi){return items.filter(x=>x&&x.source&&x.target).map((x,i)=>({id:`c-${Date.now()}-${bi}-${i}`,source:String(x.source||"").trim(),target:String(x.target||"").trim(),ref:String(x.ref||"").trim(),context:x.context||"",reason:x.reason||"",aiCategory:CATEGORIES.includes(x.aiCategory)?x.aiCategory:"게임, 콘텐츠, 개발"})).filter(x=>!isFatal(x.source,x.target));}
 function dedupeItems(items){const seen=new Set();return items.filter(x=>{const k=`${normQ(x.source)}|${normQ(x.target)}`;if(seen.has(k))return false;seen.add(k);return true;});}
 function parseJson(text){const clean=text.trim().replace(/^```json\s*/i,"").replace(/^```\s*/i,"").replace(/```$/i,"").trim();const s=clean.indexOf("[");if(s===-1)return[];let j=clean.slice(s);const e=j.lastIndexOf("]");if(e!==-1){try{const p=JSON.parse(j.slice(0,e+1));return Array.isArray(p)?p:[];}catch{}}const lc=j.lastIndexOf("},");if(lc!==-1)j=j.slice(0,lc+1)+"]";else{const lo=j.lastIndexOf("}");if(lo!==-1)j=j.slice(0,lo+1)+"]";}try{return JSON.parse(j);}catch{return[];}}
 
