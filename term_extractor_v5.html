@@ -129,7 +129,8 @@ tbody tr:hover td{background:#fafafa}
           <div class="field"><label>번역문 SharePoint 링크 (KO)</label><input type="text" id="link-tgt" placeholder="https://...pptx 또는 SharePoint 공유 링크" oninput="clearSharePointAttachment('tgt');updateCTA()"/></div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:-4px">
-          <button class="btn sm" onclick="attachSharePointLinks()">SharePoint 링크로 파일 첨부</button>
+          <button class="btn sm primary" onclick="attachSharePointLinks()">확인</button>
+          <button class="btn sm" onclick="cancelSharePointLinks()">취소</button>
           <span id="sp-status" style="font-size:11px;color:#94a3b8">회사 계정으로 한 번 로그인하면 이후 링크 확인이 더 빨라집니다.</span>
         </div>
         <div style="font-size:11px;color:#94a3b8;margin-top:-4px">회사 SharePoint 링크는 Microsoft 로그인이 필요합니다. 로그인/권한 오류가 나면 파일 업로드나 텍스트 붙여넣기를 사용해주세요.</div>
@@ -549,6 +550,16 @@ async function attachSharePointLinks(){
   }catch(err){st.textContent=formatSharePointError(err);st.style.color="#ef4444";}
 }
 async function verifySharePointLinks(){return attachSharePointLinks();}
+function cancelSharePointLinks(){
+  document.getElementById("link-src").value="";
+  document.getElementById("link-tgt").value="";
+  clearSharePointAttachment("src");
+  clearSharePointAttachment("tgt");
+  const st=document.getElementById("sp-status");
+  st.textContent="SharePoint 링크 입력을 취소했습니다.";
+  st.style.color="#94a3b8";
+  updateCTA();
+}
 function textToSlideBlocks(text,label){
   const parts=String(text||"").split(/\n{2,}/).map(t=>cleanText(t)).filter(Boolean);
   const chunks=[];let buf="";
